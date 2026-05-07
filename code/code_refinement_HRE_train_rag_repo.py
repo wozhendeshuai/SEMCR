@@ -89,7 +89,7 @@ def embed_texts(texts: List[str], tokenizer, model) -> List[np.ndarray]:
     return np.zeros((0, model.config.hidden_size), dtype=np.float32)
 
 
-def load_index_and_meta(index_path: str, meta_path: str, vec_path: str, RQ: str):
+def load_index_and_meta(index_path: str, meta_path: str, vec_path: str):
     start_time = time.time()
     import faiss
     idx = faiss.read_index(index_path)
@@ -112,10 +112,8 @@ def load_index_and_meta(index_path: str, meta_path: str, vec_path: str, RQ: str)
     text_to_vecs = {}
     for meta, vec in zip(meta_list, vecs):
         original_item = meta.get("original_item", {})
-        if RQ == "RQ1":
-            patch_text = original_item.get("patch")
-        else:
-            patch_text = original_item.get("old")
+
+        patch_text = original_item.get("old")
         if patch_text:
             text_to_vecs[patch_text] = vec.astype(np.float32)
     elapsed_time = time.time() - start_time
@@ -170,7 +168,6 @@ def retrieve_and_rerank_experiences(
         vec_path: str,
         query: str,
         query_comment: str,
-        RQ: str,
         tokenizer,
         model,
         top_k_anchors: int = 5,
@@ -183,7 +180,7 @@ def retrieve_and_rerank_experiences(
     4. 按该相似度重排序，返回 top-N 经验
     """
     total_start_time = time.time()
-    idx, metas, text_to_vecs = load_index_and_meta(index_path, meta_path, vec_path, RQ)
+    idx, metas, text_to_vecs = load_index_and_meta(index_path, meta_path, vec_path)
     embed_start_time = time.time()
     q_vec = embed_texts([query], tokenizer, model).astype('float32')
     print(f"  [retrieve_and_rerank] 查询嵌入用时: {time.time() - embed_start_time:.4f}s", file=sys.stderr)
@@ -191,7 +188,7 @@ def retrieve_and_rerank_experiences(
 
     all_candidate_experiences = []
     had_code = set()
-
+    RQ="RQ2"
     if RQ == "RQ2":
         for score, pos in zip(D[0], I[0]):
             if pos < 0 or pos >= len(metas) or metas[pos]["original_item"]["old"] == query or \
@@ -281,7 +278,7 @@ def retrieve_and_rerank_experiences(
     return all_candidate_experiences[:top_k_anchors]
 
 
-def update_hre_experience(index_path, meta_path, experiences_str, RQ):
+def update_hre_experience(index_path, meta_path, experiences_str):
     start_time = time.time()
     experiences = json.loads(experiences_str)
     # 读取现有的元数据
@@ -295,6 +292,7 @@ def update_hre_experience(index_path, meta_path, experiences_str, RQ):
 
     # 将experiences转换为便于查找的字典
     exp_dict = {}
+    RQ="RQ2"
     if RQ == "RQ2":
         for exp in experiences:
             key = (exp.get("before_code"))
@@ -336,14 +334,14 @@ def update_hre_experience(index_path, meta_path, experiences_str, RQ):
 
 
 def RHE_search_subprocess(RHE_index_path, RHE_meta_path, RHE_vec_path, tok, mod, query, top_k, operation, experiences,
-                          RQ, query_comment=""):
+                           query_comment=""):
     start_time = time.time()
     if operation == "search":
         try:
             time0 = time.time()
             print(f"  [search] 开始执行")
             res = retrieve_and_rerank_experiences(RHE_index_path, RHE_meta_path, RHE_vec_path, query, query_comment,
-                                                  RQ, tok, mod,
+                                                   tok, mod,
                                                   top_k_anchors=top_k)
             time1 = time.time() - time0
             print(f"  [search] 检索用时: {time1:.4f}s")
@@ -355,7 +353,7 @@ def RHE_search_subprocess(RHE_index_path, RHE_meta_path, RHE_vec_path, tok, mod,
         try:
             time0 = time.time()
             print(f"  [update] 开始执行")
-            res = update_hre_experience(RHE_index_path, RHE_meta_path, experiences, RQ)
+            res = update_hre_experience(RHE_index_path, RHE_meta_path, experiences)
             time1 = time.time() - time0
             print(f"  [update] 更新用时: {time1:.4f}s")
         except Exception as e:
@@ -527,7 +525,7 @@ def metrics_to_text(metrics: Dict[str, float]) -> str:
 def generate_refinement_code(before_code, review_comment, repo, client):
     history_repair_experiences, search_time = RHE_search_subprocess(
         RHE_index_path, RHE_meta_path, RHE_vec_path, tok, mod,
-        before_code, TOPK_HRE, "search", "", "RQ2", query_comment=review_comment
+        before_code, TOPK_HRE, "search", "",  query_comment=review_comment
     )
     hre_block = ""
     formatted_blocks = []
@@ -778,7 +776,7 @@ def update_experience_v2(pr_number, repo: str, before_code: str, review_comment:
         update_experience_str = "[]"
     result, update_rhe_time = RHE_search_subprocess(
         RHE_index_path, RHE_meta_path, RHE_vec_path, tok, mod,
-        before_code, TOPK_HRE, "update", str(update_experience_str), "RQ2"
+        before_code, TOPK_HRE, "update", str(update_experience_str),
     )
     print(f"  更新经验的结果：{result}")
     return total_gen_time, update_rhe_time, total_input_tokens, total_output_tokens, prompts, outputs
@@ -962,7 +960,7 @@ if __name__ == "__main__":
                 update_experience_str = "[]"
 
             result, save_exp_time = RHE_search_subprocess(RHE_index_path, RHE_meta_path, RHE_vec_path, tok, mod,
-                                                          before_code, TOPK_HRE, "update", update_experience_str, "RQ2")
+                                                          before_code, TOPK_HRE, "update", update_experience_str, )
             print(f"  保存经验的结果：{result}")
 
             print(f"      仓库 {repo}，PR号 {pr_number}，update_experience 开始")

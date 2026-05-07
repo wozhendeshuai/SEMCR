@@ -1,12 +1,13 @@
 # python
 import json
 import os
-from typing import List, Dict, Tuple
+from typing import List
 
+import faiss
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
-import faiss
+
 MODEL_DIR = "/Users/jiajunyu/llm_models/Qwen3-Embedding-0.6B"
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 BATCH_SIZE = 8
@@ -52,7 +53,7 @@ def embed_texts(texts: List[str], tokenizer, model) -> np.ndarray:
     return np.zeros((0, model.config.hidden_size), dtype=np.float32)
 
 
-def build_combined_index(train_path: str, out_dir: str, type: str, index_name: str, meta_name: str, vec_name: str):
+def build_combined_index(train_path: str, out_dir: str, index_name: str, meta_name: str, vec_name: str):
     os.makedirs(out_dir, exist_ok=True)
 
     print(f"[build] train_path = {train_path}", flush=True)
@@ -88,12 +89,9 @@ def build_combined_index(train_path: str, out_dir: str, type: str, index_name: s
                 item = json.loads(line.strip())
             except Exception:
                 continue
-            # 这里给到的应该是修复前的代码片段，这样我们去找最相似的补丁最为合理
-            if type == "RQ1":
-                patch_text = item.get("patch")
-            else:
-                patch_text = item.get("old")
-                # patch_text = process_diff_code(patch_text)
+
+            patch_text = item.get("old")
+            # patch_text = process_diff_code(patch_text)
             if not patch_text:
                 continue
             texts.append(patch_text)
@@ -129,54 +127,18 @@ def build_combined_index(train_path: str, out_dir: str, type: str, index_name: s
 
 if __name__ == "__main__":
     REPO_List = [
-        "space-wizards-space-station-14",
-        "Dolibarr-dolibarr",
-        "communication_netmanager_base",
-        "arkui_ace_engine",
-        "ability_ability_runtime",
         "apache-beam",
         "EOSIO-eos",
         "home-assistant-core",
-        "mulesoft-mule",
         "pachyderm-pachyderm",
-        "ray-project-ray",
-        "tikv-pd"
     ]
     #
     for repo in REPO_List:
-        TRAIN_DATA = f"/Users/jiajunyu/paper/qwen-plus/repo_data/{repo}/{repo}_train.jsonl"
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0320/hre/{repo}"
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0320/hre_no_update/{repo}"
+        TRAIN_DATA = f"/Users/data/{repo}/{repo}_train.jsonl"
 
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0320/hre_no_continual_update/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0320/hre_no_reflection/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_no_exp_revision/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_no_reflection/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_no_continual_update/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_no_experience_revision/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_experience/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_TOPK=1/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_TOPK=3/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_TOPK=7/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_reflection=1/{repo}"
-
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_reflection=2/{repo}"
-        OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_reflection=4/{repo}"
-        # OUT_DIR = f"/Users/jiajunyu/paper/qwen-plus/0323/hre_only_reflection=5/{repo}"
-
-
+        OUT_DIR = f"./hre/{repo}"
         INDEX_NAME = f"{repo}_code_refinement_hre_index_plus_0.faiss"
         META_NAME = f"{repo}_code_refinement_hre_meta_plus_0.jsonl"
         VEC_NAME = f"{repo}_code_refinement_hre_vec_plus_0.npy"
         os.makedirs(OUT_DIR, exist_ok=True)
-        build_combined_index(TRAIN_DATA, OUT_DIR,"RQ2",INDEX_NAME,META_NAME,VEC_NAME)
+        build_combined_index(TRAIN_DATA, OUT_DIR, INDEX_NAME, META_NAME, VEC_NAME)
