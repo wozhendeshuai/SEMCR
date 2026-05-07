@@ -1,142 +1,120 @@
 # SEMCR
 
-## 简要说明
-本仓库实现基于检索的历史修复经验 (HRE) + 反思循环的代码修复流水线。主要脚本：
-- `code/memory_build.py`：把训练数据嵌入并构建 Faiss 索引（为后续检索准备）
-- `code/code_refinement_HRE_train_rag_repo.py`：主流程，检索、生成、反思、更新经验并记录结果
-- 其它：评估工具在 `code/eval_code_sim.py` 中
+本项目实现了基于历史修复经验（HRE）与大模型反思机制的代码修复流水线，包含：构建向量索引、检索并重排序历史经验、基于检索与评论生成修复、反思迭代、汇总与更新经验等完整流程。
 
-## 目录结构（示例）
-- `code/` — 源代码
-  - `memory_build.py`
-  - `code_refinement_HRE_train_rag_repo.py`
-  - `eval_code_sim.py`
-- `data/{repo}/{repo}_train.jsonl` — 每个仓库的训练数据（jsonl）
-- `hre_self_improve/{repo}/` — index/meta/vec 输出目录（由 `memory_build.py` 生成）
-- `result/{repo}/` — 运行结果与度量文件
-- `MODEL_DIR` — 本地嵌入模型路径（在代码中指定）
+## 目录结构
+- `memory_build.py`：构建向量索引及元数据（`faiss`、`.npy`、`.jsonl`）。
+- `eval_code_sim.py`：评估指标实现（EM / BLEU / CodeBLEU / ROUGE-L / EditProgress）。
+- 主脚本（当前工程中为顶层运行段）：执行检索、生成、反思、更新经验与评估并保存结果。
+- `README.md`：本文件。
+- 数据与结果路径示例：
+  - 训练数据：`../data/{repo}/{repo}_train.jsonl`
+  - 索引：`./hre/{repo}/{repo}_code_refinement_hre_index_plus_0.faiss`
+  - 元数据：`./hre/{repo}/{repo}_code_refinement_hre_meta_plus_0.jsonl`
+  - 向量：`./hre/{repo}/{repo}_code_refinement_hre_vec_plus_0.npy`
+  - 结果表格：`./result/{repo}/{repo}_qwen3_8B_train_HRE_outputs_plus_0.xlsx`
+  - 评估报告：`./result/{repo}/{repo}_qwen3_8B_train_HRE_metrics_plus_0.txt`
 
-## 前提与环境
-- 操作系统：macOS（说明以 macOS 为主）
-- Python：推荐 Python 3.9+
-- GPU/加速：若有 Apple Silicon 请使用 MPS（代码已检测）
-- 本地嵌入模型：`Qwen3-Embedding-0.6B`（或你自己的 embedding 模型），并将其解压到本地路径，然后在代码中设置 `MODEL_DIR`
-- 需要的磁盘空间：模型和索引文件可能较大（数 GB）
+---
 
-## 依赖（示例）
-在虚拟环境中安装（示例 `requirements.txt` ）：
+## 环境与依赖
+- Python 3.9+（建议使用 3.10）
+- macOS（代码已对 `mps` 做兼容判断）/ Windows需自行修改配置
+- 主要第三方库：
+  - `torch`（在 macOS 上如果支持 MPS，可使用）
+  - `transformers`
+  - `faiss` 或 `faiss-cpu`
+  - `numpy`, `pandas`, `openpyxl`
+  - `nltk`, `rouge`, `codebleu`（或等价实现）
+  - `tqdm`
+- 建议使用虚拟环境：
+  - python -m venv .venv
+  - source .venv/bin/activate
+  - pip install -r requirements.txt
+- 注意：`codebleu` 可能需要 C/C++ 依赖或额外安装步骤。若不便，可替换为本地实现或跳过该指标。
 
-`requirements.txt`
-```
-torch
-transformers
-numpy
-pandas
-tqdm
-openai
-faiss-cpu    # 或根据系统使用 faiss 或 conda 安装 faiss-cpu
-openpyxl
-```
+---
 
-安装命令（macOS）：
-- 使用 pip（先创建并激活虚拟环境）：
-  - `python3 -m venv .venv`
-  - `source .venv/bin/activate`
-  - 安装 PyTorch（按官方首页选择 MPS/CPU/metal 方案），例如：
-    - `pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu` （或参考官方命令）
-  - `pip install -r requirements.txt`
-- 如果 `faiss-cpu` 在 pip 上安装失败，建议使用 conda：
-  - `conda install -c pytorch faiss-cpu`
+## 快速开始
 
-## 配置说明（必须）
-在运行前请检查/配置以下变量（可在脚本顶部修改或改为使用环境变量）：
+1. 配置嵌入模型路径
+   - 在 `memory_build.py` 与主脚本中，设置 `MODEL_DIR` 为本地嵌入模型目录（示例：`/path/to/Qwen3-Embedding-0.6B`）。
 
-- 嵌入模型路径（在两个脚本中都使用）：
-  - `MODEL_DIR = /path/to/Qwen3-Embedding-0.6B`
-- 训练数据路径（示例，放在 repo_data）：
-  - `repo_data/{repo}/{repo}_train.jsonl`
-- 在 `code/code_refinement_HRE_train_rag_repo.py` 中：
-  - `REPO_List`：要处理的仓库列表（脚本末尾）
-  - `RHE_index_path`、`RHE_meta_path`、`RHE_vec_path`：会基于 `repo` 自动构造，确保对应目录存在或可写
-  - `RESULT_XLSX` 与 `METRIC_FILE`：输出路径
-- LLM 接口（API）：脚本内 `load_model()` 当前硬编码了 `api_key` 与 `base_url`，务必替换为你自己的凭证或改为读取环境变量：
-  - 建议设置环境变量：`export OPENAI_API_KEY=sk-...`、`export OPENAI_BASE_URL=https://...`，并在 `load_model()` 中读取（推荐修改）
+2. 构建索引（从训练数据生成向量索引）
+   - 准备训练数据：每行 JSON 表示一个 patch，需包含字段 `old`（修复前代码）与 `original_item`（可选完整条目）。
+   - 运行：
+     - `python memory_build.py`
+   - 输出会生成：`*.faiss`、`*.npy` 与 `*.jsonl`（meta）。
 
-示例（建议将 `load_model()` 改为读取环境变量）：
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
+3. 运行主流程（检索 + 生成 + 反思 + 更新经验）
+   - 配置主脚本顶部参数，例如 `REPO_List`、`MODEL_DIR`、`TOPK_HRE` 等。
+   - 运行脚本（示例在主文件末尾有 `if __name__ == "__main__"`）：
+     - `python <主脚本>.py`
+   - 运行期间将逐条处理数据、保存每条结果到 `./result/...xlsx` 并写入总体评估到 `*.txt`。
 
-## 构建 Faiss 索引（流程）
-在索引构建前，确保 `TRAIN_DATA` 文件存在（`repo_train.jsonl`），且 `MODEL_DIR` 已配置并可用。
+---
 
-命令示例：
-1. 激活虚拟环境（见上）
-2. 运行构建脚本：
-   - `python3 code/memory_build.py`
+## 主要模块功能说明
 
-`memory_build.py` 会遍历 `REPO_List`，为每个 repo 读取训练数据并生成：
-- `hre_self_improve/{repo}/{repo}_code_refinement_hre_index_plus_0.faiss`
-- `hre_self_improve/{repo}/{repo}_code_refinement_hre_meta_plus_0.jsonl`
-- `hre_self_improve/{repo}/{repo}_code_refinement_hre_vec_plus_0.npy`
+- 嵌入与索引
+  - `load_embedding_model(model_dir)`：加载 `transformers` 模型与 tokenizer，送入指定设备（`cpu` / `mps` / GPU）。
+  - `mean_pooling` 与 `embed_texts`：将模型输出池化并归一化为向量。
+  - `memory_build.py` 中的 `build_combined_index`：读取训练 `jsonl`，提取 `old` 字段批量嵌入后，用 `faiss` 构建索引，保存 `.faiss`, `.npy`, `.jsonl`。
 
-注意：
-- 若需要单独构建某个仓库可临时修改脚本中 `REPO_List` 或直接在文件顶部指定路径并调用 `build_combined_index(...)`。
+- 检索与重排序
+  - `load_index_and_meta(index_path, meta_path, vec_path)`：加载索引、meta 文件与向量阵列，建立 `text_to_vecs` 映射（用于 trigger_snippet 相似度计算）。
+  - `retrieve_and_rerank_experiences(...)`：检索 top-K 锚点（含额外 margin），为每个候选经验计算基于 trigger snippet 的相似度并重排序，支持结合评论向量再加权排序。
 
-## 运行主流程（检索 + 生成 + 反思 + 更新）
-在索引和模型准备就绪后，运行主脚本：
+- 文本处理
+  - `process_diff_code(diff_code)`：处理带有 diff 标记（`+`, `-`）的代码片段，返回修复后的代码（仅保留 `+` 与普通行，不包含 `-`）。
 
-1. 激活虚拟环境
-2. 设置必要的环境变量（建议）：
-   - `export OPENAI_API_KEY=sk-...`
-   - `export OPENAI_BASE_URL=https://your-llm-endpoint`
-3. 修改 `code/code_refinement_HRE_train_rag_repo.py` 中的 `MODEL_DIR` 与 `REPO_List`（如果需要）
-4. 运行：
-   - `python3 code/code_refinement_HRE_train_rag_repo.py`
+- LLM 交互
+  - `load_model()`：初始化大模型客户端（示例使用兼容接口）。
+  - `gen_with_messages(messages, client)`：发送对话消息给模型（stream=False），返回原始文本、处理时间与 token 计数等。包含对 thinker 标签与 json 封装的解析。
+  - 生成相关函数：
+    - `generate_refinement_code(...)`：基于检索到的 HRE 与 review comment 生成初始修复结果。
+    - `generate_reflection(...)`：当模型输出不理想时，生成一段短的“反思”文本，指出改进点。
+    - `generate_fix_with_reflection(...)`：将最新反思与历史证据合并以重新生成修复。
+    - `summarize_experience_v2(...)`：从最终高质量修复中提炼出一条可复用的经验文本。
+    - `update_experience_v2(...)`：对检索到的旧经验进行细化并通过 `RHE_search_subprocess(..., operation='update')` 写回到 `meta` 文件中（索引本身未变，只会修改 `meta`）。
 
-脚本运行说明：
-- 会读取 `repo_data/{repo}/{repo}_train.jsonl`
-- 使用 `RHE_index_path` / `RHE_meta_path` / `RHE_vec_path` 进行检索
-- 调用 `gen_with_messages()` 与外部 LLM（通过 `load_model()` 返回的 client）
-- 生成结果会以追加方式写入到 `result/{repo}/{repo}_qwen3_8B_train_HRE_outputs_plus_0.xlsx`
-- 全局平均统计写入 `result/{repo}/{repo}_qwen3_8B_train_HRE_metrics_plus_0.txt`
+- 评估与指标（见 `eval_code_sim.py`）
+  - 指标包括：EM（精确匹配）、BLEU、CodeBLEU、ROUGE-L、EditProgress（基于 Levenshtein 距离的编辑进度）。
+  - `compute_metrics(prediction, reference, input_code, lang, repo)`：统一封装返回字典。
+---
 
-## 在 PyCharm 中运行（简单步骤）
-1. 打开 PyCharm，打开项目根目录
-2. 设置 Python 解释器为刚创建的虚拟环境
-3. 在 Run/Debug Configurations 中新建 Python 运行配置：
-   - Script path：`code/code_refinement_HRE_train_rag_repo.py`
-   - Working directory：项目根目录
-   - Environment variables：添加 `OPENAI_API_KEY`、`OPENAI_BASE_URL`（如果你使用环境变量）
-4. 运行或调试
+## 输入输出格式（简述）
+- 训练/试验数据：JSONL，每行格式类似：
+  ```json
+  {
+    "ghid": "...", 
+    "proj": "...", 
+    "old": "...", 
+    "new": "...", 
+    "comment": "...", 
+    "lang": "..."
+  }
+  ```
+- `meta` 文件：每行为一个 JSON 元对象，字段 `original_item` 保存原始条目，`experiences` 字段保存 HRE 列表（每个经验包含 `experience`, `trigger_snippet`）。
+- 输出：每条样本会追加写入 `./result/*.xlsx`，同时总体统计写入 `*.txt`。
 
-## 调试与注意事项
-- 如果模型在 MPS 上出现显存/精度问题，可在 `load_embedding_model` 中强制使用 `torch.float32` 或改为 CPU。
-- Faiss 在 macOS 上安装可能出错，优先使用 `conda` 安装 `faiss-cpu`。
-- 若你的 LLM endpoint 不兼容 `OpenAI(OpenAI...)` 的 `chat.completions.create` 接口，请根据提供端点 SDK 调整 `gen_with_messages()`。
-- 强烈建议把真实 API Key 从代码中移除，改用环境变量或 secrets 管理。
+---
 
-## 快速示例命令（完整）
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-# 配置模型路径：编辑 code/memory_build.py 与 code/code_refinement_HRE_train_rag_repo.py 中的 MODEL_DIR
-# 构建索引
-python3 code/memory_build.py
-# 设置 API 凭证（或在代码中设置）
-export OPENAI_API_KEY=sk-...
-export OPENAI_BASE_URL=https://your-llm-endpoint
-# 运行主流程
-python3 code/code_refinement_HRE_train_rag_repo.py
-```
+## 参数与阈值
+- `EXTRA_RETRIEVAL_MARGIN`：检索时对 top-K 的额外扩展量，用于增加候选多样性。
+- 反思与经验更新阈值（示例默认值在代码中）：
+  - `REFLECTION_CODEBLEU_THRESHOLD`，`REFLECTION_HIGH_CODEBLEU_THRESHOLD`
+  - `REFLECTION_EDIT_PROGRESS_THRESHOLD`
+  - `MEMORY_UPDATE_CODEBLEU_THRESHOLD`，`MEMORY_UPDATE_EDIT_PROGRESS_THRESHOLD`
+- 可以通过修改这些阈值观察系统行为差异。
+
+---
 
 ## 常见问题
-- Faiss 安装失败：尝试 `conda install -c pytorch faiss-cpu`
-- GPU/加速不可用：确认 PyTorch 与硬件（MPS/CUDA）兼容
-- 模型加载慢或 OOM：降低 `BATCH_SIZE` 或在 `AutoModel.from_pretrained` 中使用更小的 dtype（谨慎）
-
-## 许可与安全
-- 请勿在代码仓库里硬编码 `api_key`。生产或公开仓库请使用环境变量或 secret 管理。
-- 本仓库用于研究/实验目的，确保遵守所下载模型与第三方服务的使用条款。
-
+- faiss 无法安装或导入：
+  - macOS 建议安装 `faiss-cpu` 或在 Linux/GPU 环境安装 `faiss-gpu`。
+- CodeBLEU 报错或无法运行：
+  - 检查 `codebleu` 依赖是否安装，不同设备所使用的tree-sitter-X的版本不一，需自行测试。
+- 模型 API（`load_model`）部分：
+  - 可用本地小模型替代。
 

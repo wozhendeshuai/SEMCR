@@ -9,16 +9,15 @@ from typing import List, Dict, Any, Tuple
 
 import numpy as np
 import pandas as pd
+import torch
 from openai import OpenAI
 from tqdm import tqdm
-
-import torch
 from transformers import AutoTokenizer, AutoModel
 
-from eval_code_sim import calculate_exact_match,calculate_bleu_score, calculate_codebleu_score, \
+from eval_code_sim import calculate_exact_match, calculate_bleu_score, calculate_codebleu_score, \
     calculate_rouge_l_score, calculate_edit_progress
 
-MODEL_DIR = "/Users/jiajunyu/llm_models/Qwen3-Embedding-0.6B"
+MODEL_DIR = "/Users/.../llm_models/Qwen3-Embedding-0.6B"
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 BATCH_SIZE = 8
 MAX_LENGTH = 4096
@@ -188,7 +187,7 @@ def retrieve_and_rerank_experiences(
 
     all_candidate_experiences = []
     had_code = set()
-    RQ="RQ2"
+    RQ = "RQ2"
     if RQ == "RQ2":
         for score, pos in zip(D[0], I[0]):
             if pos < 0 or pos >= len(metas) or metas[pos]["original_item"]["old"] == query or \
@@ -292,7 +291,7 @@ def update_hre_experience(index_path, meta_path, experiences_str):
 
     # 将experiences转换为便于查找的字典
     exp_dict = {}
-    RQ="RQ2"
+    RQ = "RQ2"
     if RQ == "RQ2":
         for exp in experiences:
             key = (exp.get("before_code"))
@@ -334,14 +333,14 @@ def update_hre_experience(index_path, meta_path, experiences_str):
 
 
 def RHE_search_subprocess(RHE_index_path, RHE_meta_path, RHE_vec_path, tok, mod, query, top_k, operation, experiences,
-                           query_comment=""):
+                          query_comment=""):
     start_time = time.time()
     if operation == "search":
         try:
             time0 = time.time()
             print(f"  [search] 开始执行")
             res = retrieve_and_rerank_experiences(RHE_index_path, RHE_meta_path, RHE_vec_path, query, query_comment,
-                                                   tok, mod,
+                                                  tok, mod,
                                                   top_k_anchors=top_k)
             time1 = time.time() - time0
             print(f"  [search] 检索用时: {time1:.4f}s")
@@ -525,7 +524,7 @@ def metrics_to_text(metrics: Dict[str, float]) -> str:
 def generate_refinement_code(before_code, review_comment, repo, client):
     history_repair_experiences, search_time = RHE_search_subprocess(
         RHE_index_path, RHE_meta_path, RHE_vec_path, tok, mod,
-        before_code, TOPK_HRE, "search", "",  query_comment=review_comment
+        before_code, TOPK_HRE, "search", "", query_comment=review_comment
     )
     hre_block = ""
     formatted_blocks = []
@@ -595,8 +594,8 @@ def generate_reflection(pr_number, repo: str, before_code: str, review_comment: 
             "PROBLEMATIC_CODE:\n" + (before_code or "") + "\n\n"
                                                           "CURRENT_OUTPUT:\n" + (current_output or "") + "\n\n"
                                                                                                          "REVIEW_COMMENT:\n" + (
-                        review_comment or "") + "\n\n"
-                                                "QUALITY_METRICS:\n" + metrics_to_text(current_metrics) + "\n" +
+                    review_comment or "") + "\n\n"
+                                            "QUALITY_METRICS:\n" + metrics_to_text(current_metrics) + "\n" +
             previous_reflection_block
     )
     user_prompt, leave_token_len = trim_text_to_tokens_use_before_code(user_prompt, before_code)
@@ -662,6 +661,7 @@ REVIEW_COMMENT:
     think, out, gen_time, input_tokens, output_tokens, _, full_output = gen_with_messages(messages, client)
     return think, out, messages, gen_time, input_tokens, output_tokens, full_output
 
+
 def summarize_experience_v2(pr_number, repo: str, before_code: str, review_comment: str,
                             after_code: str, best_output: str, best_metrics: Dict[str, float],
                             latest_reflection: str, client):
@@ -675,9 +675,9 @@ def summarize_experience_v2(pr_number, repo: str, before_code: str, review_comme
             "PROBLEMATIC_CODE:\n" + (before_code or "") + "\n\n"
                                                           "TRUE_REPAIR_CODE:\n" + (after_code or "") + "\n\n"
                                                                                                        "BEST_MODEL_OUTPUT:\n" + (
-                        best_output or "") + "\n\n"
-                                             "REVIEW_COMMENT:\n" + (review_comment or "") + "\n\n"
-                                                                                            "BEST_METRICS:\n" + metrics_to_text(
+                    best_output or "") + "\n\n"
+                                         "REVIEW_COMMENT:\n" + (review_comment or "") + "\n\n"
+                                                                                        "BEST_METRICS:\n" + metrics_to_text(
         best_metrics) + "\n"
                         "LATEST_REFLECTION:\n" + (latest_reflection or "no reflection") + "\n"
     )
@@ -734,12 +734,12 @@ def update_experience_v2(pr_number, repo: str, before_code: str, review_comment:
                     "historical_old"] + "\n\n"
                                         "HISTORICAL_REVIEW_COMMENT:\n" + candidate["historical_comment"] + "\n\n"
                                                                                                            "PROBLEMATIC_CODE:\n" + (
-                            before_code or "") + "\n\n"
-                                                 "REVIEW_COMMENT:\n" + (review_comment or "") + "\n\n"
-                                                                                                "BEST_MODEL_OUTPUT:\n" + (
-                            best_output or "") + "\n\n"
-                                                 "TRUE_REPAIR_CODE:\n" + (after_code or "") + "\n\n"
-                                                                                              "BEST_METRICS:\n" + metrics_to_text(
+                        before_code or "") + "\n\n"
+                                             "REVIEW_COMMENT:\n" + (review_comment or "") + "\n\n"
+                                                                                            "BEST_MODEL_OUTPUT:\n" + (
+                        best_output or "") + "\n\n"
+                                             "TRUE_REPAIR_CODE:\n" + (after_code or "") + "\n\n"
+                                                                                          "BEST_METRICS:\n" + metrics_to_text(
             best_metrics) + "\n"
                             "LATEST_REFLECTION:\n" + (latest_reflection or "no reflection") + "\n"
                                                                                               "Decide and output the FINAL EXPERIENCE TEXT now."
@@ -833,11 +833,8 @@ if __name__ == "__main__":
 
             after_code = item.get("new") or ""
             after_code = process_diff_code(after_code)
-            # print(f"      仓库 {repo}，before code {before_code}，after code {after_code}")
             review_comment = item.get("comment") or ""
-            # print(f"      仓库 {repo}，before code {before_code}，修复开始=======================")
             print(f"      仓库 {repo}，修复开始=======================")
-
 
             if not item.get("y", 1):
                 print(f"      跳过不需要检查的样本：仓库 {repo}，PR号 {pr_number}。========================")
@@ -928,8 +925,9 @@ if __name__ == "__main__":
                 cbleus.append(current_metrics["CodeBLEU"])
                 rouges.append(current_metrics["ROUGE-L"])
                 edit_progresses.append(current_metrics["EditProgress"])
-                print(f"      仓库 {repo}，PR号 {pr_number}，第{retry_count}次尝试,Codeblue:{current_metrics['CodeBLEU']:.4f}"
-                      f"  EditProgress={current_metrics['EditProgress']:.4f}")
+                print(
+                    f"      仓库 {repo}，PR号 {pr_number}，第{retry_count}次尝试,Codeblue:{current_metrics['CodeBLEU']:.4f}"
+                    f"  EditProgress={current_metrics['EditProgress']:.4f}")
                 if better_than(current_metrics, best_metrics):
                     best_output = new_out
                     best_metrics = current_metrics

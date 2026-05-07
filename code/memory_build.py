@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 
-MODEL_DIR = "/Users/jiajunyu/llm_models/Qwen3-Embedding-0.6B"
+MODEL_DIR = "/Users/....../llm_models/Qwen3-Embedding-0.6B"
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 BATCH_SIZE = 8
 MAX_LENGTH = 4096

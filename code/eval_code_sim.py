@@ -1,10 +1,12 @@
+from codebleu import calc_codebleu
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from rouge import Rouge
-from codebleu import calc_codebleu
+
 
 def calculate_exact_match(predicted, actual):
     """计算精确匹配得分"""
     return 1.0 if ' '.join(str(predicted).split()) == ' '.join(str(actual).split()) else 0.0
+
 
 def calculate_bleu_score(predicted, actual):
     """计算BLEU得分"""
@@ -14,18 +16,18 @@ def calculate_bleu_score(predicted, actual):
     # 处理空字符串情况
     if not pred_tokens or not actual_tokens:
         return 0.0
-    
+
     max_n = min(4, len(pred_tokens), len(actual_tokens))
     if max_n == 0:
         return 0.0
-    weights = tuple(1/max_n for _ in range(max_n))
+    weights = tuple(1 / max_n for _ in range(max_n))
     # 计算BLEU-4得分
     smoothing = SmoothingFunction().method1
 
     try:
         score = sentence_bleu(
-            [actual_tokens], 
-            pred_tokens, 
+            [actual_tokens],
+            pred_tokens,
             weights=weights,
             smoothing_function=smoothing
         )
@@ -33,7 +35,6 @@ def calculate_bleu_score(predicted, actual):
     except Exception as e:
         print(f"BLEU计算错误: {e}")
         return 0.0
-
 
 
 def calculate_codebleu_score(predicted, actual, lang, repo):
@@ -55,7 +56,7 @@ def calculate_codebleu_score(predicted, actual, lang, repo):
         "ray-project-ray": "python",
         "tikv-pd": "go",
     }
-    
+
     # 如果语言未知，尝试从repo获取默认语言
     if lang == "unknown" and repo in repo_to_lang:
         lang = repo_to_lang[repo]
@@ -69,11 +70,12 @@ def calculate_codebleu_score(predicted, actual, lang, repo):
     try:
         result = calc_codebleu([predicted], [actual], lang=lang, weights=(0.25, 0.25, 0.25, 0.25), tokenizer=None)
         return result['codebleu']
-    
+
 
     except Exception as e:
         print(f"CodeBLEU计算错误: {e}")
         return 0.0
+
 
 def calculate_rouge_l_score(predicted, actual):
     """计算ROUGE-L得分(评估最长公共子序列LCS的重叠度)"""
@@ -91,22 +93,23 @@ def calculate_rouge_l_score(predicted, actual):
     except Exception as e:
         print(f"ROUGE-L计算错误: {e}")
         return 0.0
-    
+
+
 def normal_leven2(list1, list2):
     str1 = list1
     str2 = list2
     len_str1 = len(str1) + 1
     len_str2 = len(str2) + 1
-    
+
     matrix = [0 for n in range(len_str1 * len_str2)]
-   
+
     for i in range(len_str1):
         matrix[i] = i
-    
+
     for j in range(0, len(matrix), len_str1):
         if j % len_str1 == 0:
             matrix[j] = j // len_str1
-    
+
     for i in range(1, len_str1):
         for j in range(1, len_str2):
             if str1[i - 1] == str2[j - 1]:
@@ -117,7 +120,8 @@ def normal_leven2(list1, list2):
                                            matrix[j * len_str1 + (i - 1)] + 1,
                                            matrix[(j - 1) * len_str1 + (i - 1)] + cost)
 
-    return matrix[-1]  
+    return matrix[-1]
+
 
 def calculate_edit_progress(input, predicted, actual):
     golds = actual.strip().split()
@@ -129,5 +133,5 @@ def calculate_edit_progress(input, predicted, actual):
     src2gold = normal_leven2(golds, sources)
     if src2gold == 0:
         return 1.0 if pred2gold == 0 else 0.0
-    progress = round( (abs(src2gold)-abs(pred2gold) )/abs(src2gold), 3)
+    progress = round((abs(src2gold) - abs(pred2gold)) / abs(src2gold), 3)
     return progress
